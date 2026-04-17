@@ -3,7 +3,9 @@ CREATE TABLE companies (
   id UUID PRIMARY KEY,
   rnc VARCHAR(20) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  customer_type VARCHAR(20) NOT NULL DEFAULT 'Ocasional' CHECK (customer_type IN ('Iguala', 'Ocasional')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE users (
@@ -22,12 +24,15 @@ CREATE TABLE tickets (
   company_id UUID NOT NULL REFERENCES companies(id),
   contact_user_id UUID REFERENCES users(id),
   contact_phone VARCHAR(20) NOT NULL,
+  contact_email VARCHAR(255),
+  customer_type VARCHAR(20) NOT NULL DEFAULT 'Ocasional' CHECK (customer_type IN ('Iguala', 'Ocasional')),
   assistance_type VARCHAR(20) NOT NULL CHECK (assistance_type IN ('Remota', 'Presencial', 'Consulta')),
   urgency_level VARCHAR(20) NOT NULL CHECK (urgency_level IN ('Baja', 'Media', 'Alta', 'Crítica')),
   status VARCHAR(40) NOT NULL,
   priority_score INT NOT NULL,
   description TEXT NOT NULL,
   assigned_technician_id UUID REFERENCES users(id),
+  sla_deadline TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -75,4 +80,7 @@ CREATE TABLE notifications (
 
 CREATE INDEX idx_tickets_status ON tickets(status);
 CREATE INDEX idx_tickets_priority ON tickets(priority_score DESC, created_at ASC);
+CREATE INDEX idx_tickets_sla ON tickets(sla_deadline ASC);
 CREATE INDEX idx_companies_rnc ON companies(rnc);
+CREATE INDEX idx_companies_type ON companies(customer_type);
+

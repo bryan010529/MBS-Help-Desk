@@ -4,7 +4,6 @@ import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_URL;
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || 'dev-admin-token';
 
 const statuses = [
   'Nuevo',
@@ -19,19 +18,96 @@ const statuses = [
 
 const urgencyLevels = ['Baja', 'Media', 'Alta', 'Crítica'];
 const assistanceTypes = ['Remota', 'Presencial', 'Consulta'];
+const customerTypes = ['Iguala', 'Ocasional'];
+
+const SLA_LABELS = { Baja: '24 horas', Media: '8 horas', Alta: '2 horas', Crítica: 'Inmediata' };
 
 const initialTicketForm = {
   rnc: '',
   companyName: '',
   contactName: '',
   contactPhone: '',
+  contactEmail: '',
+  customerType: 'Ocasional',
   assistanceType: 'Remota',
   urgencyLevel: 'Media',
   description: '',
 };
 
+const getSession = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('admin_session') || 'null');
+  } catch {
+    return null;
+  }
+};
+
+const saveSession = (session) => sessionStorage.setItem('admin_session', JSON.stringify(session));
+const clearSession = () => sessionStorage.removeItem('admin_session');
+
+function BrandLogo({ size = 36 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <rect width="48" height="48" rx="10" fill="#2563eb" />
+      <text x="8" y="34" fontFamily="Arial,sans-serif" fontWeight="bold" fontSize="26" fill="white">IT</text>
+    </svg>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  const [form, setForm] = useState({ username: '', password: '' });
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErr('');
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(form),
+    });
+    setLoading(false);
+    if (!res.ok) { setErr('Credenciales incorrectas'); return; }
+    const data = await res.json();
+    saveSession(data);
+    onLogin(data);
+  };
+
+  return (
+    <main className="app login-page">
+      <div className="login-card card">
+        <div className="login-brand">
+          <BrandLogo size={52} />
+          <div>
+            <h1>IT Soluclick SRL</h1>
+            <p>Panel de Soporte</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="form">
+          <label>
+            Usuario
+            <input required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} autoComplete="username" />
+          </label>
+          <label>
+            Contraseña
+            <input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="current-password" />
+          </label>
+          {err && <p className="error">{err}</p>}
+          <button type="submit" disabled={loading}>{loading ? 'Ingresando…' : 'Ingresar'}</button>
+        </form>
+        <p className="powered">Powered by IT Soluclick SRL</p>
+      </div>
+    </main>
+  );
+}
+
 function App() {
   const [activeView, setActiveView] = useState('cliente');
+  const [adminSession, setAdminSession] = useState(getSession);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+
   const [ticketForm, setTicketForm] = useState(initialTicketForm);
   const [ticketFiles, setTicketFiles] = useState([]);
   const [submitMessage, setSubmitMessage] = useState('');
@@ -43,42 +119,49 @@ function App() {
   const [technicianDraft, setTechnicianDraft] = useState({});
   const [adminTickets, setAdminTickets] = useState([]);
   const [metrics, setMetrics] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [customerForm, setCustomerForm] = useState({ rnc: '', name: '', customerType: 'Ocasional' });
+  const [adminSubView, setAdminSubView] = useState('tickets');
   const [error, setError] = useState('');
 
-  const loadTrackedTicket = useCallback(async (ticketNumber = trackedTicketNumber) => {
-    if (!ticketNumber) return;
-    const response = await fetch(`${API_URL}/api/tickets/number/${ticketNumber}`);
-    if (!response.ok) {
-      setTrackedTicket(null);
-      setError('No se encontró el ticket indicado.');
-      return;
-    }
-    const data = await response.json();
-    setTrackedTicket(data.ticket);
-    setError('');
-  }, [trackedTicketNumber]);
+  const adminHeaders = useMemo(
+    () => ({ 'content-type': 'application/json', 'x-admin-token': adminSession?.token || '' }),
+    [adminSession],
+  );
+
+  const loadTrackedTicket = useCallback(
+    async (ticketNumber = trackedTicketNumber) => {
+      if (!ticketNumber) return;
+      const response = await fetch(`${API_URL}/api/tickets/number/${ticketNumber}`);
+      if (!response.ok) { setTrackedTicket(null); setError('No se encontró el ticket indicado.'); return; }
+      const data = await response.json();
+      setTrackedTicket(data.ticket);
+      setError('');
+    },
+    [trackedTicketNumber],
+  );
 
   const loadAdminData = useCallback(async () => {
-    const query = new URLSearchParams(Object.entries(adminFilters).filter(([, value]) => value)).toString();
+    if (!adminSession) return;
+    const query = new URLSearchParams(Object.entries(adminFilters).filter(([, v]) => v)).toString();
     const [ticketsRes, metricsRes] = await Promise.all([
-      fetch(`${API_URL}/api/admin/tickets${query ? `?${query}` : ''}`, {
-        headers: { 'x-admin-token': ADMIN_TOKEN },
-      }),
-      fetch(`${API_URL}/api/admin/metrics`, {
-        headers: { 'x-admin-token': ADMIN_TOKEN },
-      }),
+      fetch(`${API_URL}/api/admin/tickets${query ? `?${query}` : ''}`, { headers: adminHeaders }),
+      fetch(`${API_URL}/api/admin/metrics`, { headers: adminHeaders }),
     ]);
-
-    if (!ticketsRes.ok || !metricsRes.ok) {
-      setError('No fue posible cargar el panel administrativo.');
-      return;
-    }
-
+    if (!ticketsRes.ok || !metricsRes.ok) { setError('No fue posible cargar el panel administrativo.'); return; }
     const [ticketsData, metricsData] = await Promise.all([ticketsRes.json(), metricsRes.json()]);
     setAdminTickets(ticketsData.tickets);
     setMetrics(metricsData.metrics);
     setError('');
-  }, [adminFilters]);
+  }, [adminFilters, adminSession, adminHeaders]);
+
+  const loadCustomers = useCallback(async () => {
+    if (!adminSession) return;
+    const res = await fetch(`${API_URL}/api/admin/customers`, { headers: adminHeaders });
+    if (!res.ok) return;
+    const data = await res.json();
+    setCustomers(data.customers);
+  }, [adminSession, adminHeaders]);
 
   useEffect(() => {
     const socket = io(SOCKET_URL);
@@ -94,32 +177,27 @@ function App() {
   }, [activeView, trackedTicket?.id, loadAdminData]);
 
   useEffect(() => {
-    if (activeView === 'admin') {
+    if (activeView === 'admin' && adminSession) {
       const timeout = setTimeout(() => {
         loadAdminData();
+        loadCustomers();
       }, 0);
       return () => clearTimeout(timeout);
     }
     if (!trackedTicketNumber) return;
-    const timer = setInterval(() => {
-      loadTrackedTicket();
-    }, 5000);
+    const timer = setInterval(() => loadTrackedTicket(), 5000);
     return () => clearInterval(timer);
-  }, [activeView, trackedTicketNumber, loadAdminData, loadTrackedTicket]);
+  }, [activeView, trackedTicketNumber, adminSession, loadAdminData, loadTrackedTicket, loadCustomers]);
 
   useEffect(() => {
-    if (activeView !== 'admin') return;
-    const timer = setInterval(() => {
-      loadAdminData();
-    }, 7000);
+    if (activeView !== 'admin' || !adminSession) return;
+    const timer = setInterval(() => loadAdminData(), 7000);
     return () => clearInterval(timer);
-  }, [activeView, loadAdminData]);
+  }, [activeView, adminSession, loadAdminData]);
 
   const kanban = useMemo(() => {
-    const grouped = statuses.reduce((acc, status) => ({ ...acc, [status]: [] }), {});
-    adminTickets.forEach((ticket) => {
-      grouped[ticket.status]?.push(ticket);
-    });
+    const grouped = statuses.reduce((acc, s) => ({ ...acc, [s]: [] }), {});
+    adminTickets.forEach((t) => { grouped[t.status]?.push(t); });
     return grouped;
   }, [adminTickets]);
 
@@ -127,22 +205,16 @@ function App() {
     event.preventDefault();
     setSubmitMessage('');
     const formData = new FormData();
-    Object.entries(ticketForm).forEach(([key, value]) => formData.append(key, value));
+    Object.entries(ticketForm).forEach(([k, v]) => formData.append(k, v));
     [...ticketFiles].forEach((file) => formData.append('attachments', file));
-
     const response = await fetch(`${API_URL}/api/tickets`, { method: 'POST', body: formData });
     const data = await response.json();
-
-    if (!response.ok) {
-      setError(data.error || 'No fue posible crear el ticket.');
-      return;
-    }
-
+    if (!response.ok) { setError(data.error || 'No fue posible crear el ticket.'); return; }
     setTicketForm(initialTicketForm);
     setTicketFiles([]);
     setTrackedTicket(data.ticket);
     setTrackedTicketNumber(data.ticket.ticketNumber);
-    setSubmitMessage(`Ticket ${data.ticket.ticketNumber} creado exitosamente.`);
+    setSubmitMessage(`Ticket ${data.ticket.ticketNumber} creado. Tiempo estimado: ${SLA_LABELS[data.ticket.urgencyLevel]}.`);
     setError('');
   };
 
@@ -150,20 +222,11 @@ function App() {
     event.preventDefault();
     if (!trackedTicket) return;
     const formData = new FormData();
-    Object.entries(chatForm).forEach(([key, value]) => formData.append(key, value));
+    Object.entries(chatForm).forEach(([k, v]) => formData.append(k, v));
     [...chatFiles].forEach((file) => formData.append('attachments', file));
-
-    const response = await fetch(`${API_URL}/api/tickets/${trackedTicket.id}/messages`, {
-      method: 'POST',
-      body: formData,
-    });
-
+    const response = await fetch(`${API_URL}/api/tickets/${trackedTicket.id}/messages`, { method: 'POST', body: formData });
     const data = await response.json();
-    if (!response.ok) {
-      setError(data.error || 'No fue posible enviar el mensaje.');
-      return;
-    }
-
+    if (!response.ok) { setError(data.error || 'No fue posible enviar el mensaje.'); return; }
     setTrackedTicket(data.ticket);
     setChatForm({ ...chatForm, message: '' });
     setChatFiles([]);
@@ -171,42 +234,63 @@ function App() {
   };
 
   const updateStatus = async (ticketId, status) => {
-    const response = await fetch(`${API_URL}/api/tickets/${ticketId}/status`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
-      body: JSON.stringify({ status }),
-    });
-    if (response.ok) loadAdminData();
+    const res = await fetch(`${API_URL}/api/tickets/${ticketId}/status`, { method: 'PATCH', headers: adminHeaders, body: JSON.stringify({ status }) });
+    if (res.ok) loadAdminData();
   };
 
   const assignTechnician = async (ticketId) => {
     const technician = technicianDraft[ticketId];
     if (!technician) return;
-    const response = await fetch(`${API_URL}/api/tickets/${ticketId}/assign`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
-      body: JSON.stringify({ technician }),
-    });
-    if (response.ok) loadAdminData();
+    const res = await fetch(`${API_URL}/api/tickets/${ticketId}/assign`, { method: 'PATCH', headers: adminHeaders, body: JSON.stringify({ technician }) });
+    if (res.ok) loadAdminData();
   };
+
+  const handleSaveCustomer = async (e) => {
+    e.preventDefault();
+    const res = await fetch(`${API_URL}/api/admin/customers`, { method: 'POST', headers: adminHeaders, body: JSON.stringify(customerForm) });
+    if (!res.ok) { setError('No fue posible guardar el cliente.'); return; }
+    setCustomerForm({ rnc: '', name: '', customerType: 'Ocasional' });
+    loadCustomers();
+    setError('');
+  };
+
+  const handleAdminTabClick = () => {
+    if (!adminSession) { setShowAdminLogin(true); } else { setActiveView('admin'); }
+  };
+
+  const handleLogout = () => { clearSession(); setAdminSession(null); setActiveView('cliente'); };
+
+  if (showAdminLogin && !adminSession) {
+    return (
+      <LoginScreen
+        onLogin={(session) => { setAdminSession(session); setShowAdminLogin(false); setActiveView('admin'); }}
+      />
+    );
+  }
 
   return (
     <main className="app">
       <header className="hero-header">
-        <div>
-          <p className="eyebrow">Soporte técnico empresarial</p>
-          <h1>MBS Help Desk</h1>
-          <p>Plataforma de tickets con chat, cola por prioridad y seguimiento en tiempo real.</p>
+        <div className="hero-brand">
+          <BrandLogo size={40} />
+          <div>
+            <p className="eyebrow">IT Soluclick SRL – Soporte técnico empresarial</p>
+            <h1>Help Desk</h1>
+            <p className="hero-sub">Tickets · Chat · Cola por prioridad · Seguimiento en tiempo real</p>
+          </div>
         </div>
         <div className="tabs">
-          <button className={activeView === 'cliente' ? 'active' : ''} onClick={() => setActiveView('cliente')}>Cliente</button>
-          <button className={activeView === 'admin' ? 'active' : ''} onClick={() => setActiveView('admin')}>Panel soporte</button>
+          <button className={activeView === 'cliente' ? 'active' : ''} onClick={() => setActiveView('cliente')}>Portal cliente</button>
+          <button className={activeView === 'admin' ? 'active' : ''} onClick={handleAdminTabClick}>
+            {adminSession ? `Panel soporte (${adminSession.role})` : 'Panel soporte'}
+          </button>
+          {adminSession && <button className="btn-logout" onClick={handleLogout}>Cerrar sesión</button>}
         </div>
       </header>
 
       {error && <p className="error">{error}</p>}
 
-      {activeView === 'cliente' ? (
+      {activeView === 'cliente' && (
         <section className="grid two">
           <article className="card">
             <h2>Crear ticket</h2>
@@ -214,7 +298,13 @@ function App() {
               <label>RNC<input required value={ticketForm.rnc} onChange={(e) => setTicketForm({ ...ticketForm, rnc: e.target.value })} /></label>
               <label>Nombre de la empresa<input required value={ticketForm.companyName} onChange={(e) => setTicketForm({ ...ticketForm, companyName: e.target.value })} /></label>
               <label>Nombre del contacto<input required value={ticketForm.contactName} onChange={(e) => setTicketForm({ ...ticketForm, contactName: e.target.value })} /></label>
-              <label>Número del cliente<input type="tel" pattern="[0-9+()\\-\\s]{7,20}" required value={ticketForm.contactPhone} onChange={(e) => setTicketForm({ ...ticketForm, contactPhone: e.target.value })} placeholder="Ej: 809-555-1234" /></label>
+              <label>Número del cliente<input type="tel" pattern="[0-9+()\-\s]{7,20}" required value={ticketForm.contactPhone} onChange={(e) => setTicketForm({ ...ticketForm, contactPhone: e.target.value })} placeholder="Ej: 809-555-1234" /></label>
+              <label>Correo electrónico (para notificaciones)<input type="email" value={ticketForm.contactEmail} onChange={(e) => setTicketForm({ ...ticketForm, contactEmail: e.target.value })} placeholder="correo@empresa.com" /></label>
+              <label>Tipo de cliente
+                <select value={ticketForm.customerType} onChange={(e) => setTicketForm({ ...ticketForm, customerType: e.target.value })}>
+                  {customerTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
               <label>Tipo de asistencia
                 <select value={ticketForm.assistanceType} onChange={(e) => setTicketForm({ ...ticketForm, assistanceType: e.target.value })}>
                   {assistanceTypes.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -225,6 +315,7 @@ function App() {
                   {urgencyLevels.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               </label>
+              <p className="sla-hint">⏱ Tiempo estimado de atención: <strong>{SLA_LABELS[ticketForm.urgencyLevel]}</strong></p>
               <label>Situación o descripción<textarea required minLength={10} value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} /></label>
               <label>Adjuntar imágenes/archivos<input type="file" multiple onChange={(e) => setTicketFiles(e.target.files || [])} /></label>
               <button type="submit">Enviar Ticket</button>
@@ -238,20 +329,23 @@ function App() {
               <input placeholder="Número de ticket" value={trackedTicketNumber} onChange={(e) => setTrackedTicketNumber(e.target.value)} />
               <button onClick={() => loadTrackedTicket()}>Buscar</button>
             </div>
-
             {trackedTicket && (
               <>
-                <p><strong>Estado:</strong> {trackedTicket.status}</p>
-                <p><strong>Prioridad:</strong> {trackedTicket.urgencyLevel}</p>
-                <p><strong>Número del cliente:</strong> {trackedTicket.contactPhone}</p>
-                <p><strong>Cola:</strong> Hay {trackedTicket.ticketsAhead} tickets antes que el tuyo (posición {trackedTicket.queuePosition}).</p>
+                <div className="ticket-status-grid">
+                  <div className="status-chip">{trackedTicket.status}</div>
+                  <div className="urgency-chip">{trackedTicket.urgencyLevel}</div>
+                  {trackedTicket.customerType === 'Iguala' && <div className="iguala-chip">Iguala ⭐</div>}
+                </div>
+                <p><strong>Cola:</strong> {trackedTicket.ticketsAhead} ticket(s) antes (posición {trackedTicket.queuePosition})</p>
+                <p><strong>Tiempo estimado:</strong> {SLA_LABELS[trackedTicket.urgencyLevel]}</p>
+                <p><strong>Tiempo restante SLA:</strong> <span className="sla-remaining">{trackedTicket.slaRemaining}</span></p>
                 <p><strong>Último avance:</strong> {new Date(trackedTicket.updatedAt).toLocaleString()}</p>
 
                 <h3>Chat del ticket</h3>
                 <ul className="messages">
                   {trackedTicket.messages.map((message) => (
-                    <li key={message.id}>
-                      <p><strong>{message.senderName}</strong> ({message.senderRole}) - {new Date(message.createdAt).toLocaleString()}</p>
+                    <li key={message.id} className={`msg msg-${message.senderRole}`}>
+                      <p><strong>{message.senderName}</strong> <span className="msg-role">({message.senderRole})</span> — {new Date(message.createdAt).toLocaleString()}</p>
                       <p>{message.message}</p>
                     </li>
                   ))}
@@ -271,105 +365,137 @@ function App() {
                 </form>
 
                 <h3>Línea de tiempo</h3>
-                <ol>
+                <ol className="timeline">
                   {trackedTicket.timeline.map((event) => (
-                    <li key={event.id}>{new Date(event.createdAt).toLocaleTimeString()} - {event.message}</li>
+                    <li key={event.id}>{new Date(event.createdAt).toLocaleString()} — {event.message}</li>
                   ))}
                 </ol>
 
                 <h3>Notificaciones</h3>
-                <ul>
-                  {trackedTicket.notifications.map((notification) => (
-                    <li key={notification.id}>{new Date(notification.createdAt).toLocaleString()} - {notification.message}</li>
+                <ul className="notif-list">
+                  {trackedTicket.notifications.map((n) => (
+                    <li key={n.id}>{new Date(n.createdAt).toLocaleString()} — {n.message}</li>
                   ))}
                 </ul>
               </>
             )}
           </article>
         </section>
-      ) : (
+      )}
+
+      {activeView === 'admin' && adminSession && (
         <section className="grid one">
-          <article className="card">
-            <h2>Dashboard administrativo</h2>
-            <div className="grid filters">
-              <input placeholder="Buscar por ticket, empresa, RNC o número" value={adminFilters.search} onChange={(e) => setAdminFilters({ ...adminFilters, search: e.target.value })} />
-              <select value={adminFilters.status} onChange={(e) => setAdminFilters({ ...adminFilters, status: e.target.value })}>
-                <option value="">Estado</option>
-                {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-              <select value={adminFilters.priority} onChange={(e) => setAdminFilters({ ...adminFilters, priority: e.target.value })}>
-                <option value="">Prioridad</option>
-                {urgencyLevels.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-              <input placeholder="Empresa" value={adminFilters.company} onChange={(e) => setAdminFilters({ ...adminFilters, company: e.target.value })} />
-              <input placeholder="Técnico" value={adminFilters.technician} onChange={(e) => setAdminFilters({ ...adminFilters, technician: e.target.value })} />
-              <button onClick={loadAdminData}>Aplicar filtros</button>
-            </div>
+          <div className="admin-tabs">
+            <button className={adminSubView === 'tickets' ? 'active' : ''} onClick={() => setAdminSubView('tickets')}>Tickets</button>
+            <button className={adminSubView === 'customers' ? 'active' : ''} onClick={() => setAdminSubView('customers')}>Clientes</button>
+            <button className={adminSubView === 'kanban' ? 'active' : ''} onClick={() => setAdminSubView('kanban')}>Kanban</button>
+          </div>
 
-            {metrics && (
-              <div className="metrics">
-                <p><strong>Tickets abiertos:</strong> {metrics.opened}</p>
-                <p><strong>Tickets resueltos:</strong> {metrics.solved}</p>
-                <p><strong>Promedio de respuesta:</strong> {metrics.avgResponseMinutes} min</p>
-                <p><strong>Por urgencia:</strong> Baja {metrics.byUrgency.Baja} | Media {metrics.byUrgency.Media} | Alta {metrics.byUrgency.Alta} | Crítica {metrics.byUrgency.Crítica}</p>
+          {adminSubView === 'tickets' && (
+            <article className="card">
+              <h2>Dashboard administrativo</h2>
+              <div className="grid filters">
+                <input placeholder="Buscar por ticket, empresa, RNC o número" value={adminFilters.search} onChange={(e) => setAdminFilters({ ...adminFilters, search: e.target.value })} />
+                <select value={adminFilters.status} onChange={(e) => setAdminFilters({ ...adminFilters, status: e.target.value })}>
+                  <option value="">Estado</option>
+                  {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={adminFilters.priority} onChange={(e) => setAdminFilters({ ...adminFilters, priority: e.target.value })}>
+                  <option value="">Prioridad</option>
+                  {urgencyLevels.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+                <input placeholder="Empresa" value={adminFilters.company} onChange={(e) => setAdminFilters({ ...adminFilters, company: e.target.value })} />
+                <input placeholder="Técnico" value={adminFilters.technician} onChange={(e) => setAdminFilters({ ...adminFilters, technician: e.target.value })} />
+                <button onClick={loadAdminData}>Aplicar filtros</button>
               </div>
-            )}
 
-            <table>
-              <thead>
-                <tr>
-                  <th>Ticket</th>
-                  <th>Empresa</th>
-                  <th>Urgencia</th>
-                  <th>Estado</th>
-                  <th>Técnico</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {adminTickets.map((ticket) => (
-                  <tr key={ticket.id}>
-                    <td>{ticket.ticketNumber}</td>
-                    <td>{ticket.companyName}</td>
-                    <td>{ticket.urgencyLevel}</td>
-                    <td>
-                      <select value={ticket.status} onChange={(e) => updateStatus(ticket.id, e.target.value)}>
-                        {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
-                      </select>
-                    </td>
-                    <td>{ticket.assignedTechnician || '-'}</td>
-                    <td>
-                      <div className="inline">
-                        <input
-                          placeholder="Asignar técnico"
-                          value={technicianDraft[ticket.id] ?? ''}
-                          onChange={(e) => setTechnicianDraft({ ...technicianDraft, [ticket.id]: e.target.value })}
-                        />
-                        <button onClick={() => assignTechnician(ticket.id)}>Asignar</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              {metrics && (
+                <div className="metrics">
+                  <div className="metric-card"><span className="metric-val">{metrics.opened}</span><span>Abiertos</span></div>
+                  <div className="metric-card"><span className="metric-val">{metrics.solved}</span><span>Resueltos</span></div>
+                  <div className="metric-card"><span className="metric-val">{metrics.avgResponseMinutes} min</span><span>Prom. respuesta</span></div>
+                  <div className="metric-card"><span className="metric-val">{metrics.byUrgency?.Crítica ?? 0}</span><span>Críticos</span></div>
+                </div>
+              )}
 
-            <h3>Vista Kanban</h3>
-            <div className="kanban">
-              {statuses.map((status) => (
-                <section key={status}>
-                  <h4>{status}</h4>
-                  {(kanban[status] || []).map((ticket) => (
-                    <article key={ticket.id} className="kanban-card">
-                      <p>{ticket.ticketNumber}</p>
-                      <small>{ticket.companyName}</small>
-                    </article>
+              <table>
+                <thead>
+                  <tr><th>Ticket</th><th>Empresa</th><th>Tipo</th><th>Urgencia</th><th>Estado</th><th>SLA</th><th>Técnico</th><th>Acciones</th></tr>
+                </thead>
+                <tbody>
+                  {adminTickets.map((ticket) => (
+                    <tr key={ticket.id}>
+                      <td>{ticket.ticketNumber}</td>
+                      <td>{ticket.companyName}</td>
+                      <td>{ticket.customerType === 'Iguala' ? <span className="iguala-chip">Iguala ⭐</span> : 'Ocasional'}</td>
+                      <td>{ticket.urgencyLevel}</td>
+                      <td>
+                        <select value={ticket.status} onChange={(e) => updateStatus(ticket.id, e.target.value)}>
+                          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                      <td>{ticket.slaRemaining}</td>
+                      <td>{ticket.assignedTechnician || '—'}</td>
+                      <td>
+                        <div className="inline">
+                          <input placeholder="Asignar técnico" value={technicianDraft[ticket.id] ?? ''} onChange={(e) => setTechnicianDraft({ ...technicianDraft, [ticket.id]: e.target.value })} />
+                          <button onClick={() => assignTechnician(ticket.id)}>Asignar</button>
+                        </div>
+                      </td>
+                    </tr>
                   ))}
-                </section>
-              ))}
-            </div>
-          </article>
+                </tbody>
+              </table>
+            </article>
+          )}
+
+          {adminSubView === 'customers' && (
+            <article className="card">
+              <h2>Módulo de clientes</h2>
+              <form onSubmit={handleSaveCustomer} className="form compact">
+                <label>RNC<input required value={customerForm.rnc} onChange={(e) => setCustomerForm({ ...customerForm, rnc: e.target.value })} /></label>
+                <label>Nombre<input required value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} /></label>
+                <label>Tipo de cliente
+                  <select value={customerForm.customerType} onChange={(e) => setCustomerForm({ ...customerForm, customerType: e.target.value })}>
+                    {customerTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </label>
+                <button type="submit">Guardar cliente</button>
+              </form>
+              <table>
+                <thead><tr><th>RNC</th><th>Nombre</th><th>Tipo</th></tr></thead>
+                <tbody>
+                  {customers.map((c) => (
+                    <tr key={c.id}><td>{c.rnc}</td><td>{c.name}</td><td>{c.customerType === 'Iguala' ? <span className="iguala-chip">Iguala ⭐</span> : 'Ocasional'}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </article>
+          )}
+
+          {adminSubView === 'kanban' && (
+            <article className="card">
+              <h2>Vista Kanban</h2>
+              <div className="kanban">
+                {statuses.map((status) => (
+                  <section key={status}>
+                    <h4>{status}</h4>
+                    {(kanban[status] || []).map((ticket) => (
+                      <article key={ticket.id} className="kanban-card">
+                        <p>{ticket.ticketNumber}</p>
+                        <small>{ticket.companyName}</small>
+                        {ticket.customerType === 'Iguala' && <span className="iguala-dot"> ⭐</span>}
+                      </article>
+                    ))}
+                  </section>
+                ))}
+              </div>
+            </article>
+          )}
         </section>
       )}
+
+      <footer className="powered-footer">Powered by IT Soluclick SRL</footer>
     </main>
   );
 }

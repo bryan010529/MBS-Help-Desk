@@ -10,17 +10,27 @@ import {
   addTicketMessage,
   assignTechnician,
   assistanceTypes,
+  createCustomer,
   createTicket,
+  customerTypes,
+  getCustomerByRnc,
   getCustomerHistoryByRnc,
   getMetrics,
   getTicketById,
   getTicketByNumber,
+  listCustomers,
   listTickets,
   rules,
   statuses,
   updateTicketStatus,
   urgencies,
 } from './store.js';
+import {
+  emailTicketCreated,
+  emailTicketUpdated,
+  whatsAppTicketCreated,
+  whatsAppTicketUpdated,
+} from './notifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.resolve(__dirname, '../uploads');
@@ -45,6 +55,13 @@ const ticketSchema = z.object({
     .min(7)
     .max(20)
     .regex(/^[0-9+()\-\s]+$/, 'Formato de número inválido'),
+  contactEmail: z
+    .string()
+    .email()
+    .optional()
+    .or(z.literal(''))
+    .transform((v) => (v === '' ? undefined : v)),
+  customerType: z.enum(customerTypes).optional(),
   assistanceType: z.enum(assistanceTypes),
   urgencyLevel: z.enum(urgencies),
   description: z.string().min(10),
@@ -60,11 +77,33 @@ const messageSchema = z.object({
   message: z.string().min(1),
 });
 
+// ---------------------------------------------------------------------------
+// Auth – simple credential-based login with roles
+// ---------------------------------------------------------------------------
+const ADMIN_USERS = [
+  {
+    username: process.env.ADMIN_USER || 'admin',
+    password: process.env.ADMIN_PASSWORD || 'admin123',
+    role: 'admin',
+    token: process.env.ADMIN_TOKEN || 'dev-admin-token',
+  },
+  {
+    username: process.env.TECH_USER || 'tecnico',
+    password: process.env.TECH_PASSWORD || 'tech123',
+    role: 'tecnico',
+    token: process.env.TECH_TOKEN || 'dev-tech-token',
+  },
+];
+
+const resolveUser = (token) => ADMIN_USERS.find((u) => u.token === token) || null;
+
 const adminMiddleware = (req, res, next) => {
   const token = req.headers['x-admin-token'];
-  if (token !== (process.env.ADMIN_TOKEN || 'dev-admin-token')) {
+  const user = resolveUser(token);
+  if (!user) {
     return res.status(401).json({ error: 'Acceso administrativo no autorizado' });
   }
+  req.adminUser = user;
   return next();
 };
 
@@ -85,8 +124,16 @@ export const createApp = ({ io } = {}) => {
   app.use(express.json());
   app.use('/uploads', express.static(uploadDir));
 
+  // Auth login endpoint
+  app.post('/api/auth/login', (req, res) => {
+    const { username, password } = req.body ?? {};
+    const user = ADMIN_USERS.find((u) => u.username === username && u.password === password);
+    if (!user) return res.status(401).json({ error: 'Credenciales incorrectas' });
+    return res.json({ token: user.token, role: user.role, username: user.username });
+  });
+
   app.get('/api/config', (_req, res) => {
-    res.json({ statuses, urgencies, assistanceTypes, rules });
+    res.json({ statuses, urgencies, assistanceTypes, customerTypes, rules });
   });
 
   app.post('/api/tickets', upload.array('attachments', 10), (req, res) => {
@@ -101,6 +148,9 @@ export const createApp = ({ io } = {}) => {
     });
 
     emitEvent('ticket:created', ticket);
+    // Fire-and-forget notifications
+    emailTicketCreated(ticket);
+    whatsAppTicketCreated(ticket);
     return res.status(201).json({
       message: 'Ticket enviado correctamente',
       ticket,
@@ -142,6 +192,10 @@ export const createApp = ({ io } = {}) => {
     });
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
     emitEvent('ticket:updated', ticket);
+    // Notify customer when support responds, notify support room when client responds
+    const detail = `Nuevo mensaje de ${parsed.data.senderName}`;
+    emailTicketUpdated(ticket, detail);
+    whatsAppTicketUpdated(ticket, detail);
     return res.status(201).json({ message: 'Mensaje enviado', ticket });
   });
 
@@ -155,6 +209,9 @@ export const createApp = ({ io } = {}) => {
     });
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
     emitEvent('ticket:updated', ticket);
+    const detail = `Estado actualizado a ${parsed.data.status}`;
+    emailTicketUpdated(ticket, detail);
+    whatsAppTicketUpdated(ticket, detail);
     return res.json({ message: 'Estado actualizado', ticket });
   });
 
@@ -165,6 +222,9 @@ export const createApp = ({ io } = {}) => {
     const ticket = assignTechnician({ id: req.params.id, technician: parsed.data.technician });
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
     emitEvent('ticket:updated', ticket);
+    const detail = `Ticket asignado a ${parsed.data.technician}`;
+    emailTicketUpdated(ticket, detail);
+    whatsAppTicketUpdated(ticket, detail);
     return res.json({ message: 'Técnico asignado', ticket });
   });
 
@@ -194,15 +254,38 @@ export const createApp = ({ io } = {}) => {
     return res.json({ metrics: getMetrics() });
   });
 
+  app.get('/api/admin/customers', adminMiddleware, (_req, res) => {
+    return res.json({ customers: listCustomers() });
+  });
+
+  app.post('/api/admin/customers', adminMiddleware, (req, res) => {
+    const customerSchema = z.object({
+      rnc: z.string().min(5),
+      name: z.string().min(2),
+      customerType: z.enum(customerTypes),
+    });
+    const parsed = customerSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Datos de cliente inválidos', details: parsed.error.flatten() });
+    const customer = createCustomer(parsed.data);
+    return res.status(201).json({ customer });
+  });
+
+  app.get('/api/admin/customers/:rnc', adminMiddleware, (req, res) => {
+    const customer = getCustomerByRnc(req.params.rnc);
+    if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' });
+    return res.json({ customer });
+  });
+
   app.get('/api/admin/customers/:rnc/tickets', adminMiddleware, (req, res) => {
     return res.json({ tickets: getCustomerHistoryByRnc(req.params.rnc) });
   });
 
-  app.post('/api/tickets/:id/notify/whatsapp', (req, res) => {
+  app.post('/api/tickets/:id/notify/whatsapp', adminMiddleware, (req, res) => {
     const ticket = getTicketById(req.params.id);
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
+    whatsAppTicketUpdated(ticket, 'Notificación manual');
     return res.json({
-      message: 'Notificación de WhatsApp encolada (simulación)',
+      message: 'Notificación de WhatsApp enviada',
       ticketNumber: ticket.ticketNumber,
     });
   });

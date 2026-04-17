@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { slaDeadline, slaRemainingLabel } from './notifications.js';
 
 const URGENCY_WEIGHT = {
   Baja: 1,
@@ -18,11 +19,15 @@ const STATUS_WEIGHT = {
   Cerrado: 0,
 };
 
+// Boost for Iguala customer type (higher priority than Ocasional)
+const IGUALA_BOOST = 500;
+
 const FINAL_STATUSES = new Set(['Resuelto', 'Cerrado']);
 
 const state = {
   sequence: 1,
   tickets: [],
+  customers: [],
 };
 
 const createTicketNumber = () => {
@@ -38,7 +43,8 @@ const scoreTicket = (ticket, now = new Date()) => {
   const statusFactor = STATUS_WEIGHT[ticket.status] ?? 1;
   const ageFactor = Math.min(48, Math.round(hoursWaiting));
   const criticalBoost = ticket.urgencyLevel === 'Crítica' ? 1000 : 0;
-  return urgency * 100 + statusFactor * 10 + ageFactor + criticalBoost;
+  const igualaBoost = ticket.customerType === 'Iguala' ? IGUALA_BOOST : 0;
+  return urgency * 100 + statusFactor * 10 + ageFactor + criticalBoost + igualaBoost;
 };
 
 const sortQueue = (a, b) => {
@@ -79,11 +85,18 @@ const withQueueData = (ticket) => {
     ...ticket,
     queuePosition: position >= 0 ? position + 1 : null,
     ticketsAhead: position >= 0 ? position : 0,
+    slaDeadline: slaDeadline(ticket.urgencyLevel, ticket.createdAt),
+    slaRemaining: slaRemainingLabel(ticket.urgencyLevel, ticket.createdAt),
   };
 };
 
 export const createTicket = ({ payload, files }) => {
   const now = new Date().toISOString();
+
+  // Auto-detect customerType from customer registry (Iguala takes priority)
+  const customer = state.customers.find((c) => c.rnc === payload.rnc);
+  const customerType = payload.customerType || customer?.customerType || 'Ocasional';
+
   const ticket = {
     id: randomUUID(),
     ticketNumber: createTicketNumber(),
@@ -91,6 +104,8 @@ export const createTicket = ({ payload, files }) => {
     companyName: payload.companyName,
     contactName: payload.contactName,
     contactPhone: payload.contactPhone,
+    contactEmail: payload.contactEmail || null,
+    customerType,
     assistanceType: payload.assistanceType,
     urgencyLevel: payload.urgencyLevel,
     description: payload.description,
@@ -269,3 +284,32 @@ export const rules = {
   urgencyWeight: URGENCY_WEIGHT,
   statusWeight: STATUS_WEIGHT,
 };
+
+// ---------------------------------------------------------------------------
+// Customer registry
+// ---------------------------------------------------------------------------
+export const createCustomer = ({ rnc, name, customerType }) => {
+  const existing = state.customers.find((c) => c.rnc === rnc);
+  if (existing) {
+    existing.name = name;
+    existing.customerType = customerType;
+    existing.updatedAt = new Date().toISOString();
+    return existing;
+  }
+  const customer = {
+    id: randomUUID(),
+    rnc,
+    name,
+    customerType,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  state.customers.push(customer);
+  return customer;
+};
+
+export const listCustomers = () => [...state.customers].sort((a, b) => a.name.localeCompare(b.name));
+
+export const getCustomerByRnc = (rnc) => state.customers.find((c) => c.rnc === rnc) || null;
+
+export const customerTypes = ['Iguala', 'Ocasional'];
