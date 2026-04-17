@@ -214,7 +214,7 @@ function App() {
               <label>RNC<input required value={ticketForm.rnc} onChange={(e) => setTicketForm({ ...ticketForm, rnc: e.target.value })} /></label>
               <label>Nombre de la empresa<input required value={ticketForm.companyName} onChange={(e) => setTicketForm({ ...ticketForm, companyName: e.target.value })} /></label>
               <label>Nombre del contacto<input required value={ticketForm.contactName} onChange={(e) => setTicketForm({ ...ticketForm, contactName: e.target.value })} /></label>
-              <label>Número del cliente<input required value={ticketForm.contactPhone} onChange={(e) => setTicketForm({ ...ticketForm, contactPhone: e.target.value })} placeholder="Ej: 809-555-1234" /></label>
+              <label>Número del cliente<input type="tel" pattern="[0-9+()\\-\\s]{7,20}" required value={ticketForm.contactPhone} onChange={(e) => setTicketForm({ ...ticketForm, contactPhone: e.target.value })} placeholder="Ej: 809-555-1234" /></label>
               <label>Tipo de asistencia
                 <select value={ticketForm.assistanceType} onChange={(e) => setTicketForm({ ...ticketForm, assistanceType: e.target.value })}>
                   {assistanceTypes.map((item) => <option key={item} value={item}>{item}</option>)}
