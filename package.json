@@ -1,0 +1,28 @@
+{
+  "name": "mbs-help-desk",
+  "version": "1.0.0",
+  "description": "s",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run test --workspace server",
+    "build": "npm run build --workspace client",
+    "lint": "npm run lint --workspace client"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bryan010529/MBS-Help-Desk.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/bryan010529/MBS-Help-Desk/issues"
+  },
+  "homepage": "https://github.com/bryan010529/MBS-Help-Desk#readme",
+  "private": "true",
+  "workspaces": [
+    "server",
+    "client"
+  ]
+}
