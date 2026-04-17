@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
 
@@ -123,6 +123,11 @@ function App() {
   const [customerForm, setCustomerForm] = useState({ rnc: '', name: '', customerType: 'Ocasional' });
   const [adminSubView, setAdminSubView] = useState('tickets');
   const [error, setError] = useState('');
+  const adminFiltersRef = useRef(adminFilters);
+
+  useEffect(() => {
+    adminFiltersRef.current = adminFilters;
+  }, [adminFilters]);
 
   const adminHeaders = useMemo(
     () => ({ 'content-type': 'application/json', 'x-admin-token': adminSession?.token || '' }),
@@ -143,7 +148,7 @@ function App() {
 
   const loadAdminData = useCallback(async () => {
     if (!adminSession) return;
-    const query = new URLSearchParams(Object.entries(adminFilters).filter(([, v]) => v)).toString();
+    const query = new URLSearchParams(Object.entries(adminFiltersRef.current).filter(([, v]) => v)).toString();
     const [ticketsRes, metricsRes] = await Promise.all([
       fetch(`${API_URL}/api/admin/tickets${query ? `?${query}` : ''}`, { headers: adminHeaders }),
       fetch(`${API_URL}/api/admin/metrics`, { headers: adminHeaders }),
@@ -153,7 +158,7 @@ function App() {
     setAdminTickets(ticketsData.tickets);
     setMetrics(metricsData.metrics);
     setError('');
-  }, [adminFilters, adminSession, adminHeaders]);
+  }, [adminSession, adminHeaders]);
 
   const loadCustomers = useCallback(async () => {
     if (!adminSession) return;
