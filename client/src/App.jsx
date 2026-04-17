@@ -63,16 +63,24 @@ function LoginScreen({ onLogin }) {
     e.preventDefault();
     setLoading(true);
     setErr('');
-    const res = await fetch(`${API_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(form),
-    });
-    setLoading(false);
-    if (!res.ok) { setErr('Credenciales incorrectas'); return; }
-    const data = await res.json();
-    saveSession(data);
-    onLogin(data);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        setErr('Credenciales incorrectas');
+        return;
+      }
+      const data = await res.json();
+      saveSession(data);
+      onLogin(data);
+    } catch {
+      setErr('No fue posible iniciar sesión. Verifica la conexión con el servidor.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
