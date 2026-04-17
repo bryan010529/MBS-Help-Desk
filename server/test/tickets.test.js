@@ -9,6 +9,7 @@ const basePayload = {
   rnc: '101234567',
   companyName: 'Empresa Uno',
   contactName: 'Ana Pérez',
+  contactPhone: '8095551234',
   assistanceType: 'Remota',
   urgencyLevel: 'Media',
   description: 'No podemos conectarnos al sistema de facturación.',

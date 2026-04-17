@@ -90,6 +90,7 @@ export const createTicket = ({ payload, files }) => {
     rnc: payload.rnc,
     companyName: payload.companyName,
     contactName: payload.contactName,
+    contactPhone: payload.contactPhone,
     assistanceType: payload.assistanceType,
     urgencyLevel: payload.urgencyLevel,
     description: payload.description,
@@ -130,7 +131,7 @@ export const listTickets = (filters = {}) => {
       if (filters.toDate && new Date(ticket.createdAt) > new Date(filters.toDate)) return false;
       if (
         filters.search &&
-        ![ticket.ticketNumber, ticket.companyName, ticket.rnc].some((value) =>
+        ![ticket.ticketNumber, ticket.companyName, ticket.rnc, ticket.contactPhone].some((value) =>
           value.toLowerCase().includes(filters.search.toLowerCase()),
         )
       ) {

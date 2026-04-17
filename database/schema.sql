@@ -21,6 +21,7 @@ CREATE TABLE tickets (
   ticket_number VARCHAR(30) UNIQUE NOT NULL,
   company_id UUID NOT NULL REFERENCES companies(id),
   contact_user_id UUID REFERENCES users(id),
+  contact_phone VARCHAR(20) NOT NULL,
   assistance_type VARCHAR(20) NOT NULL CHECK (assistance_type IN ('Remota', 'Presencial', 'Consulta')),
   urgency_level VARCHAR(20) NOT NULL CHECK (urgency_level IN ('Baja', 'Media', 'Alta', 'Crítica')),
   status VARCHAR(40) NOT NULL,

@@ -4,7 +4,7 @@ Aplicación web de gestión de tickets de soporte técnico con frontend en **Rea
 
 ## Módulos implementados
 
-- **Creación de ticket**: formulario mobile-first con RNC, empresa, contacto, tipo de asistencia, urgencia, descripción y carga múltiple de archivos.
+- **Creación de ticket**: formulario mobile-first con RNC, empresa, contacto, **número del cliente**, tipo de asistencia, urgencia, descripción y carga múltiple de archivos.
 - **Prioridad y cola**: cálculo de prioridad por urgencia + estado + antigüedad, con impulso automático para tickets **Crítica**.
 - **Chat interno por ticket**: mensajes cliente/soporte con historial, fecha/hora y adjuntos.
 - **Notificaciones de avance**: registro de notificaciones in-app + endpoint opcional de WhatsApp (simulado) y línea de tiempo.

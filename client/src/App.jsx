@@ -24,6 +24,7 @@ const initialTicketForm = {
   rnc: '',
   companyName: '',
   contactName: '',
+  contactPhone: '',
   assistanceType: 'Remota',
   urgencyLevel: 'Media',
   description: '',
@@ -191,9 +192,12 @@ function App() {
 
   return (
     <main className="app">
-      <header>
-        <h1>MBS Help Desk</h1>
-        <p>Plataforma de tickets con chat, cola por prioridad y seguimiento en tiempo real.</p>
+      <header className="hero-header">
+        <div>
+          <p className="eyebrow">Soporte técnico empresarial</p>
+          <h1>MBS Help Desk</h1>
+          <p>Plataforma de tickets con chat, cola por prioridad y seguimiento en tiempo real.</p>
+        </div>
         <div className="tabs">
           <button className={activeView === 'cliente' ? 'active' : ''} onClick={() => setActiveView('cliente')}>Cliente</button>
           <button className={activeView === 'admin' ? 'active' : ''} onClick={() => setActiveView('admin')}>Panel soporte</button>
@@ -210,6 +214,7 @@ function App() {
               <label>RNC<input required value={ticketForm.rnc} onChange={(e) => setTicketForm({ ...ticketForm, rnc: e.target.value })} /></label>
               <label>Nombre de la empresa<input required value={ticketForm.companyName} onChange={(e) => setTicketForm({ ...ticketForm, companyName: e.target.value })} /></label>
               <label>Nombre del contacto<input required value={ticketForm.contactName} onChange={(e) => setTicketForm({ ...ticketForm, contactName: e.target.value })} /></label>
+              <label>Número del cliente<input required value={ticketForm.contactPhone} onChange={(e) => setTicketForm({ ...ticketForm, contactPhone: e.target.value })} placeholder="Ej: 809-555-1234" /></label>
               <label>Tipo de asistencia
                 <select value={ticketForm.assistanceType} onChange={(e) => setTicketForm({ ...ticketForm, assistanceType: e.target.value })}>
                   {assistanceTypes.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -238,6 +243,7 @@ function App() {
               <>
                 <p><strong>Estado:</strong> {trackedTicket.status}</p>
                 <p><strong>Prioridad:</strong> {trackedTicket.urgencyLevel}</p>
+                <p><strong>Número del cliente:</strong> {trackedTicket.contactPhone}</p>
                 <p><strong>Cola:</strong> Hay {trackedTicket.ticketsAhead} tickets antes que el tuyo (posición {trackedTicket.queuePosition}).</p>
                 <p><strong>Último avance:</strong> {new Date(trackedTicket.updatedAt).toLocaleString()}</p>
 
@@ -286,7 +292,7 @@ function App() {
           <article className="card">
             <h2>Dashboard administrativo</h2>
             <div className="grid filters">
-              <input placeholder="Buscar por ticket, empresa o RNC" value={adminFilters.search} onChange={(e) => setAdminFilters({ ...adminFilters, search: e.target.value })} />
+              <input placeholder="Buscar por ticket, empresa, RNC o número" value={adminFilters.search} onChange={(e) => setAdminFilters({ ...adminFilters, search: e.target.value })} />
               <select value={adminFilters.status} onChange={(e) => setAdminFilters({ ...adminFilters, status: e.target.value })}>
                 <option value="">Estado</option>
                 {statuses.map((status) => <option key={status} value={status}>{status}</option>)}

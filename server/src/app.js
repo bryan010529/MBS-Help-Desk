@@ -40,6 +40,7 @@ const ticketSchema = z.object({
   rnc: z.string().min(5),
   companyName: z.string().min(2),
   contactName: z.string().min(2),
+  contactPhone: z.string().min(7).max(20),
   assistanceType: z.enum(assistanceTypes),
   urgencyLevel: z.enum(urgencies),
   description: z.string().min(10),
